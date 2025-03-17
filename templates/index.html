@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthetic Data Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .table-container {
+            margin-bottom: 30px;
+        }
+
+        .table-title {
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .select-columns {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .loading {
+            display: none;
+            margin: 20px 0;
+        }
+
+        .visualization-container {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .viz-card {
+            margin-bottom: 20px;
+        }
+
+        .options-panel {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+        }
+
+        .saved-datasets {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Synthetic Data Generator</h1>
+
+        <div class="table-container">
+            <h2 class="table-title">Original Dataset</h2>
+            <div class="table-responsive">
+                <table id="original-table" class="table table-striped table-bordered">
+                    <thead>
+                        <tr id="original-header"></tr>
+                    </thead>
+                    <tbody id="original-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="select-columns">
+            <h3>Select Columns for Synthetic Generation</h3>
+            <div id="column-checkboxes" class="row"></div>
+
+            <div class="options-panel mt-3">
+                <h4>Generation Options</h4>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="visualize-option">
+                            <label class="form-check-label" for="visualize-option">
+                                Generate Distribution Visualizations
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="save-option">
+                            <label class="form-check-label" for="save-option">
+                                Save Generated Dataset
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="method-select">Generation Method:</label>
+                            <select class="form-control" id="method-select">
+                                <option value="standard">Standard</option>
+                                <option value="advanced">Advanced</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-12">
+                        <div class="form-group">
+                            <label for="dl-model-select">Deep Learning Model (for numeric data):</label>
+                            <select class="form-control" id="dl-model-select">
+                                <option value="none">None (Use Statistical Methods)</option>
+                                <option value="gan">GAN (Generative Adversarial Network)</option>
+                                <option value="vae">VAE (Variational Autoencoder)</option>
+                                <option value="transformer">Transformer</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="generate-btn" class="btn btn-primary mt-3">Generate Synthetic Data</button>
+            <div class="loading" id="loading">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2">Generating synthetic data...</span>
+            </div>
+        </div>
+
+        <div class="table-container" id="synthetic-container" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2 class="table-title">Synthetic Dataset</h2>
+                <div id="download-container" style="display: none;">
+                    <button id="download-btn" class="btn btn-success">Download CSV</button>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table id="synthetic-table" class="table table-striped table-bordered">
+                    <thead>
+                        <tr id="synthetic-header"></tr>
+                    </thead>
+                    <tbody id="synthetic-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="visualization-container" id="visualization-container" style="display: none;">
+            <h2>Distribution Comparisons</h2>
+            <div class="row" id="visualization-row"></div>
+        </div>
+
+        <div class="saved-datasets" id="saved-datasets-container" style="display: none;">
+            <h2>Saved Datasets</h2>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Dataset ID</th>
+                            <th>Timestamp</th>
+                            <th>Modified Columns</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="saved-datasets-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Load original data
+            fetch('/get_data')
+                .then(response => response.json())
+                .then(data => {
+                    displayOriginalData(data);
+                    createColumnCheckboxes(data.columns);
+                });
+
+            // Set up generate button
+            document.getElementById('generate-btn').addEventListener('click', generateSyntheticData);
+
+            // Load saved datasets
+            loadSavedDatasets();
+        });
+
+        function displayOriginalData(data) {
+            const headerRow = document.getElementById('original-header');
+            const tableBody = document.getElementById('original-body');
+
+            // Clear existing content
+            headerRow.innerHTML = '';
+            tableBody.innerHTML = '';
+
+            // Add headers
+            data.columns.forEach(column => {
+                const th = document.createElement('th');
+                th.textContent = column;
+                headerRow.appendChild(th);
+            });
+
+            // Add data rows
+            data.data.forEach(row => {
+                const tr = document.createElement('tr');
+                data.columns.forEach(column => {
+                    const td = document.createElement('td');
+                    td.textContent = row[column];
+                    tr.appendChild(td);
+                });
+                tableBody.appendChild(tr);
+            });
+        }
+
+        function createColumnCheckboxes(columns) {
+            const container = document.getElementById('column-checkboxes');
+
+            columns.forEach(column => {
+                const div = document.createElement('div');
+                div.className = 'col-md-4 mb-2';
+
+                const checkboxGroup = document.createElement('div');
+                checkboxGroup.className = 'form-check';
+
+                const input = document.createElement('input');
+                input.className = 'form-check-input column-checkbox';
+                input.type = 'checkbox';
+                input.id = `column-${column}`;
+                input.value = column;
+
+                const label = document.createElement('label');
+                label.className = 'form-check-label';
+                label.htmlFor = `column-${column}`;
+                label.textContent = column;
+
+                checkboxGroup.appendChild(input);
+                checkboxGroup.appendChild(label);
+                div.appendChild(checkboxGroup);
+                container.appendChild(div);
+            });
+        }
+
+        function generateSyntheticData() {
+            // Show loading indicator
+            document.getElementById('loading').style.display = 'flex';
+
+            // Get selected columns
+            const selectedColumns = Array.from(
+                document.querySelectorAll('.column-checkbox:checked')
+            ).map(checkbox => checkbox.value);
+
+            // Get options
+            const visualize = document.getElementById('visualize-option').checked;
+            const save = document.getElementById('save-option').checked;
+            const method = document.getElementById('method-select').value;
+            const dlModel = document.getElementById('dl-model-select').value;
+
+            // Determine which endpoint to use
+            const endpoint = dlModel !== 'none' ? '/generate_dl_synthetic' : '/generate_synthetic';
+
+            // Send request to generate synthetic data
+            fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    columns: selectedColumns,
+                    visualize: visualize,
+                    save: save,
+                    method: method,
+                    dl_model: dlModel
+                }),
+            })
+                .then(response => response.json())
+                .then(data => {
+                    displaySyntheticData(data);
+
+                    // Display visualizations if available
+                    if (data.visualizations) {
+                        displayVisualizations(data.visualizations);
+                    } else {
+                        // Hide visualization container if no visualizations
+                        document.getElementById('visualization-container').style.display = 'none';
+                    }
+
+                    // Set up download button if dataset was saved
+                    if (data.dataset_id) {
+                        setupDownloadButton(data.dataset_id);
+                        // Refresh saved datasets list
+                        loadSavedDatasets();
+                    } else {
+                        // Hide download button if dataset wasn't saved
+                        document.getElementById('download-container').style.display = 'none';
+                    }
+
+                    // Hide loading indicator
+                    document.getElementById('loading').style.display = 'none';
+                    // Show synthetic table container
+                    document.getElementById('synthetic-container').style.display = 'block';
+
+                    // Show model type if deep learning was used
+                    if (data.model_type) {
+                        const modelInfo = document.createElement('div');
+                        modelInfo.className = 'alert alert-info mt-3';
+                        modelInfo.textContent = `Generated using ${data.model_type.toUpperCase()} model`;
+                        document.getElementById('synthetic-container').appendChild(modelInfo);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('loading').style.display = 'none';
+                    alert('An error occurred while generating synthetic data.');
+                });
+        }
+
+        function displaySyntheticData(data) {
+            const headerRow = document.getElementById('synthetic-header');
+            const tableBody = document.getElementById('synthetic-body');
+
+            // Clear existing content
+            headerRow.innerHTML = '';
+            tableBody.innerHTML = '';
+
+            // Add headers
+            data.columns.forEach(column => {
+                const th = document.createElement('th');
+                th.textContent = column;
+                headerRow.appendChild(th);
+            });
+
+            // Add data rows
+            data.synthetic_data.forEach(row => {
+                const tr = document.createElement('tr');
+                data.columns.forEach(column => {
+                    const td = document.createElement('td');
+                    td.textContent = row[column];
+                    tr.appendChild(td);
+                });
+                tableBody.appendChild(tr);
+            });
+        }
+
+        function displayVisualizations(visualizations) {
+            const container = document.getElementById('visualization-row');
+            container.innerHTML = '';
+
+            // Create a card for each visualization
+            for (const [column, imgData] of Object.entries(visualizations)) {
+                const col = document.createElement('div');
+                col.className = 'col-md-6 viz-card';
+
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                const cardBody = document.createElement('div');
+                cardBody.className = 'card-body';
+
+                const title = document.createElement('h5');
+                title.className = 'card-title';
+                title.textContent = `Distribution for ${column}`;
+
+                const img = document.createElement('img');
+                img.src = `data:image/png;base64,${imgData}`;
+                img.className = 'img-fluid';
+                img.alt = `Distribution comparison for ${column}`;
+
+                cardBody.appendChild(title);
+                cardBody.appendChild(img);
+                card.appendChild(cardBody);
+                col.appendChild(card);
+                container.appendChild(col);
+            }
+
+            // Show the visualization container
+            document.getElementById('visualization-container').style.display = 'block';
+        }
+
+        function setupDownloadButton(datasetId) {
+            const downloadBtn = document.getElementById('download-btn');
+            downloadBtn.onclick = function () {
+                window.location.href = `/download/${datasetId}`;
+            };
+
+            // Show the download button
+            document.getElementById('download-container').style.display = 'block';
+        }
+
+        function loadSavedDatasets() {
+            fetch('/saved_datasets')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.datasets && data.datasets.length > 0) {
+                        displaySavedDatasets(data.datasets);
+                    }
+                })
+                .catch(error => console.error('Error loading saved datasets:', error));
+        }
+
+        function displaySavedDatasets(datasets) {
+            const tableBody = document.getElementById('saved-datasets-body');
+            tableBody.innerHTML = '';
+
+            datasets.forEach(dataset => {
+                const tr = document.createElement('tr');
+
+                // Dataset ID
+                const tdId = document.createElement('td');
+                tdId.textContent = dataset.dataset_id;
+                tr.appendChild(tdId);
+
+                // Timestamp
+                const tdTimestamp = document.createElement('td');
+                tdTimestamp.textContent = dataset.timestamp;
+                tr.appendChild(tdTimestamp);
+
+                // Modified columns
+                const tdColumns = document.createElement('td');
+                tdColumns.textContent = dataset.modified_columns.join(', ');
+                tr.appendChild(tdColumns);
+
+                // Actions
+                const tdActions = document.createElement('td');
+                const downloadBtn = document.createElement('a');
+                downloadBtn.href = `/download/${dataset.dataset_id}`;
+                downloadBtn.className = 'btn btn-sm btn-primary';
+                downloadBtn.textContent = 'Download';
+                tdActions.appendChild(downloadBtn);
+                tr.appendChild(tdActions);
+
+                tableBody.appendChild(tr);
+            });
+
+            // Show the saved datasets container
+            document.getElementById('saved-datasets-container').style.display = 'block';
+        }
+    </script>
+</body>
+
+</html>
